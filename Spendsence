@@ -1,0 +1,1460 @@
+package com.spendsense2.app
+import android.os.Bundle
+import android.util.Log
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import kotlin.math.abs
+// =====================================================================
+// App-level shared state (simple singleton)
+// =====================================================================
+object AppState {
+ // selected currency (default)
+ var selectedCurrency by mutableStateOf("INR (₹)")
+ // notification enabled flag
+ var notificationsEnabled by mutableStateOf(true)
+}
+// =====================================================================
+// COLORS
+// =====================================================================
+val PrimaryPurple = Color(0xFF6A1B9A)
+val AccentRed = Color(0xFFF44336)
+val AccentGreen = Color(0xFF4CAF50)
+val BackgroundLight = Color(0xFFF7F7F7)
+val CardBackground = Color(0xFFFFFFFF)
+val TextColor = Color(0xFF333333)
+val BorderColor = Color(0xFFE0E0E0)
+// =====================================================================
+// DATA MODELS
+// =====================================================================
+data class Transaction(
+ val id: Int,
+ val name: String,
+ val category: String,
+ val amount: Double,
+ val date: String
+)
+val sampleTransactions = listOf(
+ Transaction(1, "Grocery Store", "Food", -125.50, "Today"),
+ Transaction(2, "Salary Deposit", "Income", 8500.00, "Nov 1"),
+ Transaction(3, "Electric Bill", "Utilities", -89.99, "Nov 3"),
+ Transaction(4, "Restaurant", "Food", -64.25, "Nov 4"),
+ Transaction(5, "Gas Station", "Transport", -55.00, "Nov 4"),
+)
+val incomeData = listOf(1500f, 2200f, 1800f, 2500f, 3000f, 4000f)
+val expenseData = listOf(900f, 1200f, 1500f, 1700f, 1000f, 1500f)
+val months = listOf("Jun", "Jul", "Aug", "Sep", "Oct", "Nov")
+val expenseBreakdownData = mapOf(
+ "Housing" to 1500.00,
+ "Food & Groceries" to 650.00,
+ "Transport" to 300.00,
+ "Utilities" to 200.00,
+ "Entertainment" to 150.00,
+ "Other" to 400.00
+)
+val incomeBreakdownData = mapOf(
+ "Salary" to 6000.00,
+ "Freelance" to 2000.00,
+ "Investments" to 500.00
+)
+// =====================================================================
+// SCREEN NAVIGATION
+// =====================================================================
+sealed class Screen {
+ object Login : Screen()
+ object Dashboard : Screen()
+ object Transactions : Screen()
+ object AddIncome : Screen()
+ object AddExpense : Screen()
+ object Analysis : Screen()
+ object Settings : Screen()
+ object Profile : Screen()
+ object Currency : Screen()
+ object BasicInfo : Screen()
+ object Backup : Screen()
+}
+// =====================================================================
+// MAIN ACTIVITY
+// =====================================================================
+class MainActivity : ComponentActivity() {
+ override fun onCreate(savedInstanceState: Bundle?) {
+ super.onCreate(savedInstanceState)
+ setContent {
+ MaterialTheme {
+ MainAppNavigator()
+ }
+ }
+ }
+}
+@Composable
+fun MainAppNavigator() {
+ var currentScreen by remember { mutableStateOf<Screen>(Screen.Login) }
+ Box(
+ modifier = Modifier
+ .fillMaxSize()
+ .background(if (currentScreen is Screen.Login) PrimaryPurple else Color.White)
+ ) {
+ when (currentScreen) {
+ is Screen.Login -> LoginScreen(
+ onSignInSuccess = {
+ Log.d("NAV", " Login Success → Dashboard")
+ currentScreen = Screen.Dashboard
+ }
+ )
+ is Screen.Dashboard -> DashboardScreen(
+ onNavigate = { screen ->
+ Log.d("NAV", " Dashboard → $screen")
+ currentScreen = screen
+ }
+ )
+ is Screen.Transactions -> TransactionsScreen(
+ onNavigateBack = {
+ Log.d("NAV", " Transactions → Dashboard")
+ currentScreen = Screen.Dashboard
+ }
+ )
+ is Screen.AddIncome -> AddTransactionScreen(
+ isIncome = true,
+ onNavigateBack = {
+ Log.d("NAV", " AddIncome → Dashboard")
+ currentScreen = Screen.Dashboard
+ }
+ )
+ is Screen.AddExpense -> AddTransactionScreen(
+ isIncome = false,
+ onNavigateBack = {
+ Log.d("NAV", " AddExpense → Dashboard")
+ currentScreen = Screen.Dashboard
+ }
+ )
+ is Screen.Analysis -> AnalysisScreen(
+ onNavigateBack = {
+ Log.d("NAV", " Analysis → Dashboard")
+ currentScreen = Screen.Dashboard
+ }
+ )
+ is Screen.Settings -> SettingsScreen(
+ onNavigateBack = {
+ Log.d("NAV", " Settings → Dashboard")
+ currentScreen = Screen.Dashboard
+ },
+ onOpen = { screen ->
+ // navigate to requested internal settings screens
+ currentScreen = screen
+ },
+ onNavigateToProfile = {
+ Log.d("NAV", " Settings → Profile")
+ currentScreen = Screen.Profile
+ }
+ )
+ is Screen.Profile -> ProfileScreen(
+ onNavigateBack = {
+ Log.d("NAV", " Profile → Settings")
+ currentScreen = Screen.Settings
+ }
+ )
+ is Screen.Currency -> CurrenciesScreen(
+ onNavigateBack = { currentScreen = Screen.Settings }
+ )
+ is Screen.BasicInfo -> BasicInfoScreenWrapper(
+ onNavigateBack = { currentScreen = Screen.Settings }
+ )
+ is Screen.Backup -> BackupScreen(
+ onNavigateBack = { currentScreen = Screen.Settings }
+ )
+ }
+ }
+}
+// =====================================================================
+// LOGIN SCREEN
+// =====================================================================
+@Composable
+fun LoginScreen(onSignInSuccess: () -> Unit) {
+ val emailOrPhone = remember { mutableStateOf("sinchanaam48@gmail.com") }
+ val password = remember { mutableStateOf("Sinchana@124") }
+ Box(modifier = Modifier.fillMaxSize()) {
+ Box(
+ modifier = Modifier
+ .fillMaxWidth()
+ .fillMaxHeight(0.3f)
+ .background(PrimaryPurple)
+ .align(Alignment.TopCenter)
+ ) {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(top = 40.dp, start = 32.dp, end = 32.dp),
+ verticalAlignment = Alignment.CenterVertically
+ ) {
+ Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Wallet", tint = Color.White)
+ Spacer(Modifier.width(8.dp))
+ Text("SpendSense2", fontWeight = FontWeight.Bold, color = Color.White)
+ }
+ }
+ Card(
+ modifier = Modifier
+ .fillMaxWidth()
+ .fillMaxHeight(0.8f)
+ .align(Alignment.BottomCenter),
+ shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
+ colors = CardDefaults.cardColors(containerColor = Color.White)
+ ) {
+ Column(
+ modifier = Modifier
+ .fillMaxSize()
+ .padding(32.dp)
+ .verticalScroll(rememberScrollState()),
+ horizontalAlignment = Alignment.CenterHorizontally
+ ) {
+ Text(
+ text = "Welcome back! ",
+ fontSize = 20.sp,
+ fontWeight = FontWeight.Bold,
+ color = PrimaryPurple.copy(alpha = 0.9f)
+ )
+ Text("Sign in to continue your journey", fontSize = 14.sp, color = Color.Gray, modifier =
+ Modifier.padding(bottom = 24.dp))
+ OutlinedTextField(
+ value = emailOrPhone.value,
+ onValueChange = { emailOrPhone.value = it },
+ label = { Text("Email or Phone Number") },
+ leadingIcon = { Icon(Icons.Default.MailOutline, null) },
+ modifier = Modifier.fillMaxWidth()
+ )
+ Spacer(modifier = Modifier.height(16.dp))
+ OutlinedTextField(
+ value = password.value,
+ onValueChange = { password.value = it },
+ label = { Text("Enter your password") },
+ leadingIcon = { Icon(Icons.Default.Lock, null) },
+ visualTransformation = PasswordVisualTransformation(),
+ modifier = Modifier.fillMaxWidth()
+ )
+ TextButton(
+ onClick = { /* Handle Forgot Password */ },
+ modifier = Modifier.align(Alignment.End)
+ ) {
+ Text("Forgot password?", color = PrimaryPurple)
+ }
+ Spacer(modifier = Modifier.height(24.dp))
+ Button(
+ onClick = {
+ Log.d("LOGIN", " Sign In button clicked")
+ onSignInSuccess()
+ },
+ colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple),
+ modifier = Modifier
+ .fillMaxWidth()
+ .height(56.dp),
+ shape = RoundedCornerShape(8.dp)
+ ) {
+ Text("Sign In", fontSize = 18.sp)
+ }
+ Spacer(modifier = Modifier.height(16.dp))
+ Text("Or continue with", color = Color.Gray)
+ Spacer(modifier = Modifier.height(16.dp))
+ Row(
+ modifier = Modifier.fillMaxWidth(),
+ horizontalArrangement = Arrangement.SpaceEvenly
+ ) {
+ OutlinedButton(
+ onClick = { Log.d("LOGIN", "Google sign-in clicked") },
+ modifier = Modifier
+ .weight(1f)
+ .height(50.dp)
+ .padding(end = 8.dp)
+ ) {
+ Text("G Google")
+ }
+ OutlinedButton(
+ onClick = { Log.d("LOGIN", "Facebook sign-in clicked") },
+ modifier = Modifier
+ .weight(1f)
+ .height(50.dp)
+ .padding(start = 8.dp)
+ ) {
+ Text("f Facebook")
+ }
+ }
+ Spacer(modifier = Modifier.height(16.dp))
+ TextButton(onClick = { Log.d("LOGIN", "Sign up clicked") }) {
+ Text("Don't have an account? Sign up free")
+ }
+ Spacer(modifier = Modifier.height(16.dp))
+ Text("By signing in you agree to our Terms and Privacy Policy", fontSize = 12.sp, color =
+ Color.Gray)
+ }
+ }
+ }
+}
+// =====================================================================
+// DASHBOARD SCREEN
+// =====================================================================
+@Composable
+fun DashboardScreen(onNavigate: (Screen) -> Unit) {
+ Scaffold(
+ topBar = {
+ AppHeader(
+ onSettingsClick = { onNavigate(Screen.Settings) },
+ onAnalysisClick = { onNavigate(Screen.Analysis) }
+ )
+ }
+ ) { paddingValues ->
+ LazyColumn(
+ contentPadding = paddingValues,
+ modifier = Modifier
+ .fillMaxSize()
+ .background(Color.White)
+ .padding(horizontal = 16.dp)
+ ) {
+ item {
+ Text("Welcome back! ", fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+ Text("Here's your financial overview", fontSize = 14.sp, color = Color.Gray)
+ Spacer(modifier = Modifier.height(16.dp))
+ }
+ item {
+ BalanceCard()
+ Spacer(modifier = Modifier.height(24.dp))
+ }
+ item {
+ ActionRow(
+ title = "Add Income",
+ subtitle = "Record earnings",
+ iconColor = AccentGreen.copy(alpha = 0.8f),
+ onClick = {
+ Log.d("DASHBOARD", " Add Income clicked")
+ onNavigate(Screen.AddIncome)
+ }
+ )
+ Spacer(modifier = Modifier.height(8.dp))
+ ActionRow(
+ title = "Add Expense",
+ subtitle = "Track spending",
+ iconColor = AccentRed.copy(alpha = 0.8f),
+ onClick = {
+ Log.d("DASHBOARD", " Add Expense clicked")
+ onNavigate(Screen.AddExpense)
+ }
+ )
+ Spacer(modifier = Modifier.height(24.dp))
+ }
+ item {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(vertical = 8.dp),
+ horizontalArrangement = Arrangement.SpaceBetween,
+ verticalAlignment = Alignment.CenterVertically
+ ) {
+ Text("Recent Transactions (5)", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+ TextButton(onClick = {
+ Log.d("DASHBOARD", " View All Transactions clicked")
+ onNavigate(Screen.Transactions)
+ }) {
+ Text("View All", color = PrimaryPurple)
+ Icon(
+ Icons.Default.KeyboardArrowRight,
+ contentDescription = null,
+ tint = PrimaryPurple,
+ modifier = Modifier.size(16.dp)
+ )
+ }
+ }
+ }
+ items(sampleTransactions) { transaction ->
+ TransactionItem(transaction = transaction)
+ Divider(Modifier.padding(vertical = 8.dp), color = BorderColor)
+ }
+ item {
+ Spacer(modifier = Modifier.height(40.dp))
+ }
+ }
+ }
+}
+@Composable
+fun AppHeader(onSettingsClick: () -> Unit, onAnalysisClick: () -> Unit) {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(horizontal = 16.dp, vertical = 16.dp),
+ verticalAlignment = Alignment.CenterVertically,
+ horizontalArrangement = Arrangement.SpaceBetween
+ ) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Icon(Icons.Default.AccountBalanceWallet, contentDescription = "Wallet", tint = PrimaryPurple)
+ Spacer(Modifier.width(8.dp))
+ Text("SpendSense2", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+ }
+ Row {
+ IconButton(onClick = {
+ Log.d("HEADER", " Analysis clicked")
+ onAnalysisClick()
+ }) {
+ Icon(Icons.Default.TrendingUp, contentDescription = "Financial Analysis")
+ }
+ IconButton(onClick = {
+ Log.d("HEADER", " Settings clicked")
+ onSettingsClick()
+ }) {
+ Icon(Icons.Default.Settings, contentDescription = "Settings")
+ }
+ }
+ }
+}
+@Composable
+fun BalanceCard() {
+ Card(
+ modifier = Modifier.fillMaxWidth(),
+ shape = RoundedCornerShape(16.dp),
+ colors = CardDefaults.cardColors(containerColor = PrimaryPurple)
+ ) {
+ Column(modifier = Modifier.padding(24.dp).fillMaxWidth()) {
+ Text("Total Balance", color = Color.White.copy(alpha = 0.8f))
+ Text("$5245.67", fontSize = 36.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+ Spacer(modifier = Modifier.height(16.dp))
+ Row(modifier = Modifier.fillMaxWidth()) {
+ DashboardMiniCard(
+ title = "Income",
+ amount = "$8500.00",
+ change = "+12% this month",
+ icon = Icons.Default.ArrowDownward,
+ iconColor = AccentGreen,
+ modifier = Modifier.weight(1f).padding(end = 8.dp)
+ )
+ DashboardMiniCard(
+ title = "Expenses",
+ amount = "$3254.33",
+ change = "-8% this month",
+ icon = Icons.Default.ArrowUpward,
+ iconColor = AccentRed,
+ modifier = Modifier.weight(1f).padding(start = 8.dp)
+ )
+ }
+ }
+ }
+}
+@Composable
+fun DashboardMiniCard(
+ title: String,
+ amount: String,
+ change: String,
+ icon: ImageVector,
+ iconColor: Color,
+ modifier: Modifier = Modifier
+) {
+ Card(
+ modifier = modifier.height(IntrinsicSize.Max),
+ shape = RoundedCornerShape(12.dp),
+ colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.2f))
+ ) {
+ Column(modifier = Modifier.padding(12.dp)) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(16.dp))
+ Spacer(Modifier.width(4.dp))
+ Text(title, color = Color.White.copy(alpha = 0.8f), fontSize = 12.sp)
+ }
+ Text(amount, color = Color.White, fontWeight = FontWeight.Bold)
+ Text(change, color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+ }
+ }
+}
+@Composable
+fun ActionRow(title: String, subtitle: String, iconColor: Color, onClick: () -> Unit) {
+ Card(
+ modifier = Modifier
+ .fillMaxWidth()
+ .clickable { onClick() }, // Make card clickable
+ shape = RoundedCornerShape(12.dp),
+ elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+ ) {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(vertical = 16.dp, horizontal = 16.dp),
+ verticalAlignment = Alignment.CenterVertically
+ ) {
+ Icon(
+ imageVector = Icons.Default.AddCircle,
+ contentDescription = null,
+ tint = iconColor,
+ modifier = Modifier
+ .size(24.dp)
+ .padding(end = 4.dp)
+ )
+ Column(modifier = Modifier.weight(1f)) {
+ Text(title, fontWeight = FontWeight.SemiBold)
+ Text(subtitle, color = Color.Gray, fontSize = 12.sp)
+ }
+ Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.LightGray)
+ }
+ }
+}
+@Composable
+fun TransactionItem(transaction: Transaction) {
+ val isExpense = transaction.amount < 0
+ val amountColor = if (isExpense) AccentRed else AccentGreen
+ val icon = when (transaction.category) {
+ "Food" -> Icons.Default.ShoppingCart
+ "Income" -> Icons.Default.AttachMoney
+ "Utilities" -> Icons.Default.FlashOn
+ "Transport" -> Icons.Default.DirectionsCar
+ else -> Icons.Default.LocalAtm
+ }
+ val amountPrefix = if (isExpense) "-" else "+"
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(vertical = 4.dp),
+ verticalAlignment = Alignment.CenterVertically
+ ) {
+ Box(
+ modifier = Modifier
+ .size(40.dp)
+ .clip(RoundedCornerShape(8.dp))
+ .background(if (isExpense) AccentRed.copy(alpha = 0.1f) else AccentGreen.copy(alpha =
+ 0.1f)),
+ contentAlignment = Alignment.Center
+ ) {
+ Icon(icon, contentDescription = null, tint = if (isExpense) AccentRed else AccentGreen)
+ }
+ Spacer(Modifier.width(16.dp))
+ Column(modifier = Modifier.weight(1f)) {
+ Text(transaction.name, fontWeight = FontWeight.SemiBold)
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Text(
+ text = transaction.category,
+ fontSize = 10.sp,
+ color = Color.White,
+ modifier = Modifier
+ .clip(RoundedCornerShape(4.dp))
+ .background(PrimaryPurple.copy(alpha = 0.7f))
+ .padding(horizontal = 4.dp, vertical = 2.dp)
+ )
+ Text(
+ " • ${transaction.date}",
+ fontSize = 12.sp,
+ color = Color.Gray,
+ modifier = Modifier.padding(start = 8.dp)
+ )
+ }
+ }
+ Text(
+ text = "$amountPrefix${"%.2f".format(abs(transaction.amount))}",
+ color = amountColor,
+ fontWeight = FontWeight.Bold
+ )
+ }
+}
+// =====================================================================
+// TRANSACTIONS SCREEN
+// =====================================================================
+@Composable
+fun TransactionsScreen(onNavigateBack: () -> Unit) {
+ Scaffold(
+ topBar = { SimpleTopBarWithBack("All Transactions", onNavigateBack) }
+ ) { paddingValues ->
+ LazyColumn(
+ contentPadding = PaddingValues(16.dp),
+ modifier = Modifier.padding(paddingValues)
+ ) {
+ items(sampleTransactions) { transaction ->
+ TransactionItem(transaction = transaction)
+ Divider(Modifier.padding(vertical = 8.dp), color = BorderColor)
+ }
+ item {
+ Text(
+ "End of list.",
+ color = Color.Gray,
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(top = 16.dp),
+ fontWeight = FontWeight.Light
+ )
+ }
+ }
+ }
+}
+// =====================================================================
+// ADD TRANSACTION SCREEN
+// =====================================================================
+@Composable
+fun AddTransactionScreen(isIncome: Boolean, onNavigateBack: () -> Unit) {
+ val title = if (isIncome) "Add Income" else "Add Expense"
+ val cardColor = if (isIncome) AccentGreen else AccentRed
+ val buttonText = if (isIncome) "Save Income" else "Save Expense"
+ var amount by remember { mutableStateOf("$0.00") }
+ var description by remember { mutableStateOf("") }
+ var category by remember { mutableStateOf("Select a category") }
+ var date by remember { mutableStateOf("07-11-2025") }
+ var notes by remember { mutableStateOf("") }
+ Scaffold(
+ topBar = {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(16.dp),
+ verticalAlignment = Alignment.CenterVertically
+ ) {
+ IconButton(onClick = onNavigateBack) {
+ Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+ }
+ Spacer(Modifier.width(8.dp))
+ Text("Back to Home", fontSize = 14.sp)
+ }
+ }
+ ) { paddingValues ->
+ Column(
+ modifier = Modifier
+ .fillMaxSize()
+ .padding(paddingValues)
+ .padding(horizontal = 16.dp)
+ .verticalScroll(rememberScrollState())
+ ) {
+ Card(
+ modifier = Modifier.fillMaxWidth(),
+ shape = RoundedCornerShape(16.dp),
+ colors = CardDefaults.cardColors(containerColor = cardColor)
+ ) {
+ Row(modifier = Modifier.padding(24.dp)) {
+ Icon(
+ imageVector = if (isIncome) Icons.Default.AttachMoney else Icons.Default.CreditCard,
+ contentDescription = null,
+ tint = Color.White,
+ modifier = Modifier
+ .size(32.dp)
+ .padding(end = 8.dp)
+ )
+ Column {
+ Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
+ Text(
+ text = if (isIncome) "Record earnings" else "Track your spending and stay on budget",
+ color = Color.White.copy(alpha = 0.8f)
+ )
+ }
+ }
+ }
+ Spacer(modifier = Modifier.height(24.dp))
+ Text(if (isIncome) "Amount Received *" else "Amount *", style =
+ MaterialTheme.typography.labelMedium)
+ OutlinedTextField(
+ value = amount,
+ onValueChange = { amount = it },
+ modifier = Modifier.fillMaxWidth(),
+ leadingIcon = { Text("$", fontWeight = FontWeight.Bold) },
+ )
+ Spacer(modifier = Modifier.height(16.dp))
+ Text(if (isIncome) "Source *" else "Description *", style =
+ MaterialTheme.typography.labelMedium)
+ OutlinedTextField(
+ value = description,
+ onValueChange = { description = it },
+ modifier = Modifier.fillMaxWidth(),
+ placeholder = {
+ Text(if (isIncome) "e.g., Client Payment, Salary" else "e.g., Grocery Shopping, Gas Fill-up")
+ }
+ )
+ Spacer(modifier = Modifier.height(16.dp))
+ Text("Category *", style = MaterialTheme.typography.labelMedium)
+ OutlinedTextField(
+ value = category,
+ onValueChange = { category = it },
+ modifier = Modifier.fillMaxWidth(),
+ trailingIcon = { Icon(Icons.Default.KeyboardArrowDown, contentDescription = null) }
+ )
+ Spacer(modifier = Modifier.height(16.dp))
+ Text("Date *", style = MaterialTheme.typography.labelMedium)
+ OutlinedTextField(
+ value = date,
+ onValueChange = { date = it },
+ modifier = Modifier.fillMaxWidth(),
+ trailingIcon = { Icon(Icons.Default.CalendarToday, contentDescription = null) }
+ )
+ Spacer(modifier = Modifier.height(16.dp))
+ Text("Notes (Optional)", style = MaterialTheme.typography.labelMedium)
+ OutlinedTextField(
+ value = notes,
+ onValueChange = { notes = it },
+ modifier = Modifier
+ .fillMaxWidth()
+ .height(80.dp),
+ placeholder = { Text("Add any additional details...") },
+ singleLine = false
+ )
+ Spacer(modifier = Modifier.height(24.dp))
+ Row(
+ modifier = Modifier.fillMaxWidth(),
+ horizontalArrangement = Arrangement.SpaceBetween
+ ) {
+ OutlinedButton(
+ onClick = {
+ Log.d("ADD_TRANSACTION", " Cancel clicked")
+ onNavigateBack()
+ },
+ modifier = Modifier
+ .weight(1f)
+ .height(50.dp)
+ .padding(end = 8.dp)
+ ) {
+ Text("Cancel")
+ }
+ Button(
+ onClick = {
+ Log.d("ADD_TRANSACTION", " Save clicked - ${if (isIncome) "Income" else
+ "Expense"}")
+ // TODO: Add saving logic
+ onNavigateBack()
+ },
+ modifier = Modifier
+ .weight(2f)
+ .height(50.dp)
+ .padding(start = 8.dp),
+ colors = ButtonDefaults.buttonColors(containerColor = cardColor),
+ shape = RoundedCornerShape(8.dp)
+ ) {
+ Icon(
+ imageVector = Icons.Default.Save,
+ contentDescription = null,
+ modifier = Modifier.size(18.dp)
+ )
+ Spacer(Modifier.width(8.dp))
+ Text(buttonText, fontSize = 13.sp, color = TextColor)
+ }
+ }
+ Spacer(modifier = Modifier.height(24.dp))
+ ProTipsCard(isIncome = isIncome)
+ Spacer(modifier = Modifier.height(24.dp))
+ }
+ }
+}
+// =====================================================================
+// ANALYSIS SCREEN
+// =====================================================================
+@Composable
+fun AnalysisScreen(onNavigateBack: () -> Unit) {
+ var selectedTab by remember { mutableStateOf("Trends") }
+ val expenseColors = listOf(AccentRed, Color(0xFFE57373), Color(0xFFC62828), Color(0xFFB71C1C),
+ Color(0xFFFFCCBC), PrimaryPurple)
+ val incomeColors = listOf(AccentGreen, Color(0xFF81C784), Color(0xFF4CAF50), Color(0xFF388E3C),
+ Color(0xFFC8E6C9), PrimaryPurple)
+ Scaffold(
+ topBar = { SimpleTopBarWithBack("Financial Analysis", onNavigateBack) }
+ ) { paddingValues ->
+ LazyColumn(
+ contentPadding = paddingValues,
+ modifier = Modifier
+ .fillMaxSize()
+ .padding(horizontal = 16.dp)
+ ) {
+ item {
+ Spacer(Modifier.height(16.dp))
+ Row(
+ modifier = Modifier.fillMaxWidth(),
+ horizontalArrangement = Arrangement.SpaceBetween
+ ) {
+ FinancialMetricCardMini("Savings Rate", "61.7%", AccentGreen, Icons.Default.ShowChart,
+ Modifier.weight(1f).padding(end = 4.dp))
+ FinancialMetricCardMini("Monthly Savings", "$5246", PrimaryPurple,
+ Icons.Default.AttachMoney, Modifier.weight(1f).padding(start = 4.dp))
+ }
+ Row(
+ modifier = Modifier.fillMaxWidth(),
+ horizontalArrangement = Arrangement.SpaceBetween
+ ) {
+ FinancialMetricCardMini("Avg. Expenses", "$3575", AccentRed, Icons.Default.Wallet,
+ Modifier.weight(1f).padding(end = 4.dp))
+ FinancialMetricCardMini("Expense Trend", "Decreasing", AccentGreen,
+ Icons.Default.ArrowDownward, Modifier.weight(1f).padding(start = 4.dp))
+ }
+ Spacer(Modifier.height(16.dp))
+ }
+ item {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(vertical = 8.dp),
+ horizontalArrangement = Arrangement.SpaceAround
+ ) {
+ TabButton("Trends", selectedTab == "Trends") { selectedTab = "Trends" }
+ TabButton("Expense Breakdown", selectedTab == "Expense Breakdown") { selectedTab =
+ "Expense Breakdown" }
+ TabButton("Income Breakdown", selectedTab == "Income Breakdown") { selectedTab =
+ "Income Breakdown" }
+ }
+ Spacer(Modifier.height(16.dp))
+ }
+ item {
+ when (selectedTab) {
+ "Trends" -> {
+ Text("Income vs Expenses (Line Chart)", fontWeight = FontWeight.SemiBold, fontSize =
+ 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+ LineChartComparison()
+ Spacer(Modifier.height(24.dp))
+ Text("Monthly Comparison (Bar Chart)", fontWeight = FontWeight.SemiBold, fontSize =
+ 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+ BarChartComparison()
+ }
+ "Expense Breakdown" -> {
+ Text("Expense Distribution by Category", fontWeight = FontWeight.SemiBold, fontSize =
+ 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+ PieChartBreakdown(expenseBreakdownData, "Expense Distribution by Category",
+expenseColors)
+ }
+ "Income Breakdown" -> {
+ Text("Income Sources Distribution", fontWeight = FontWeight.SemiBold, fontSize =
+ 16.sp, modifier = Modifier.padding(bottom = 8.dp))
+ PieChartBreakdown(incomeBreakdownData, "Income Sources Distribution",
+incomeColors)
+ }
+ }
+ Spacer(Modifier.height(40.dp))
+ }
+ }
+ }
+}
+// CHARTS (Line, Bar, Pie)
+@Composable
+fun PieChartBreakdown(data: Map<String, Double>, title: String, colorPalette: List<Color>) {
+ val total = data.values.sum()
+ Column(
+ modifier = Modifier.fillMaxWidth(),
+ horizontalAlignment = Alignment.CenterHorizontally
+ ) {
+ Card(
+ modifier = Modifier
+ .fillMaxWidth()
+ .height(250.dp),
+ shape = RoundedCornerShape(12.dp),
+ elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+ colors = CardDefaults.cardColors(containerColor = CardBackground)
+ ) {
+ Canvas(modifier = Modifier
+ .fillMaxSize()
+ .padding(16.dp)) {
+ val diameter = size.minDimension - 20.dp.toPx()
+ val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
+ var startAngle = 0f
+ data.entries.forEachIndexed { index, entry ->
+ val sweepAngle = (entry.value / total).toFloat() * 360f
+ val color = colorPalette.getOrElse(index) { Color.Gray }
+ drawArc(
+ color = color,
+ startAngle = startAngle,
+ sweepAngle = sweepAngle,
+ useCenter = true,
+ topLeft = topLeft,
+ size = Size(diameter, diameter)
+ )
+ startAngle += sweepAngle
+ }
+ }
+ }
+ Spacer(Modifier.height(16.dp))
+ data.entries.forEachIndexed { index, entry ->
+ val color = colorPalette.getOrElse(index) { Color.Gray }
+ val percentage = (entry.value / total) * 100
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(vertical = 4.dp),
+ verticalAlignment = Alignment.CenterVertically,
+ horizontalArrangement = Arrangement.SpaceBetween
+ ) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Box(modifier = Modifier
+ .size(10.dp)
+ .clip(CircleShape)
+ .background(color))
+ Spacer(Modifier.width(8.dp))
+ Text(entry.key, fontSize = 14.sp, color = TextColor)
+ }
+ Text("${"%.2f".format(entry.value)} (${"%.1f".format(percentage)}%)", fontWeight =
+ FontWeight.SemiBold)
+ }
+ }
+ }
+}
+@Composable
+fun LineChartComparison() {
+ val maxAmount = (incomeData + expenseData).maxOrNull() ?: 1f
+ val scaleFactor = 1f / maxAmount
+ Card(
+ modifier = Modifier
+ .fillMaxWidth()
+ .height(200.dp),
+ shape = RoundedCornerShape(12.dp),
+ elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+ colors = CardDefaults.cardColors(containerColor = CardBackground)
+ ) {
+ Canvas(modifier = Modifier
+ .fillMaxSize()
+ .padding(16.dp)) {
+ val padding = 30.dp.toPx()
+ val width = size.width - 2 * padding
+ val height = size.height - 2 * padding
+ val stepX = width / (months.size - 1).toFloat()
+ drawLine(
+ color = BorderColor,
+ start = Offset(padding, height + padding),
+ end = Offset(width + padding, height + padding),
+ strokeWidth = 2f
+ )
+ fun drawDataLine(data: List<Float>, color: Color) {
+ val path = Path()
+ data.forEachIndexed { index, value ->
+ val x = padding + index * stepX
+ val y = height + padding - (value * scaleFactor * height)
+ if (index == 0) {
+ path.moveTo(x, y)
+ } else {
+ path.lineTo(x, y)
+ }
+ drawCircle(color, radius = 5f, center = Offset(x, y))
+ }
+ drawPath(
+ path = path,
+ color = color,
+ style = Stroke(width = 4f)
+ )
+ }
+ drawDataLine(incomeData.map { it.toFloat() }, AccentGreen)
+ drawDataLine(expenseData.map { it.toFloat() }, AccentRed)
+ months.forEachIndexed { index, month ->
+ val x = padding + index * stepX
+ drawContext.canvas.nativeCanvas.drawText(
+ month,
+ x,
+ height + padding + 15.dp.toPx(),
+ android.graphics.Paint().apply {
+ textSize = 10.sp.toPx()
+ color = TextColor.toArgb()
+ textAlign = android.graphics.Paint.Align.CENTER
+ }
+ )
+ }
+ }
+ }
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(top = 8.dp),
+ horizontalArrangement = Arrangement.Center
+ ) {
+ LegendItem("Income", AccentGreen)
+ Spacer(Modifier.width(16.dp))
+ LegendItem("Expenses", AccentRed)
+ }
+}
+@Composable
+fun BarChartComparison() {
+ val maxAmount = (incomeData + expenseData).maxOrNull() ?: 1f
+ val scaleFactor = 1f / maxAmount
+ Card(
+ modifier = Modifier
+ .fillMaxWidth()
+ .height(200.dp),
+ shape = RoundedCornerShape(12.dp),
+ elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+ colors = CardDefaults.cardColors(containerColor = CardBackground)
+ ) {
+ Canvas(modifier = Modifier
+ .fillMaxSize()
+ .padding(16.dp)) {
+ val padding = 30.dp.toPx()
+ val width = size.width - 2 * padding
+ val height = size.height - 2 * padding
+ val numMonths = months.size
+ val groupWidth = width / numMonths
+ val barWidth = groupWidth / 3f
+ drawLine(
+ color = BorderColor,
+ start = Offset(padding, height + padding),
+ end = Offset(width + padding, height + padding),
+ strokeWidth = 2f
+ )
+ months.forEachIndexed { index, month ->
+ val groupCenter = padding + (index + 0.5f) * groupWidth
+ val incomeBarX = groupCenter - barWidth
+ val expenseBarX = groupCenter
+ val incomeHeight = incomeData[index] * scaleFactor * height
+ drawRect(
+ color = AccentGreen,
+ topLeft = Offset(incomeBarX - barWidth / 2, height + padding - incomeHeight),
+ size = Size(barWidth, incomeHeight)
+ )
+ val expenseHeight = expenseData[index] * scaleFactor * height
+ drawRect(
+ color = AccentRed,
+ topLeft = Offset(expenseBarX - barWidth / 2, height + padding - expenseHeight),
+ size = Size(barWidth, expenseHeight)
+ )
+ drawContext.canvas.nativeCanvas.drawText(
+ month,
+ groupCenter,
+ height + padding + 15.dp.toPx(),
+ android.graphics.Paint().apply {
+ textSize = 10.sp.toPx()
+ color = TextColor.toArgb()
+ textAlign = android.graphics.Paint.Align.CENTER
+ }
+ )
+ }
+ }
+ }
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(top = 8.dp),
+ horizontalArrangement = Arrangement.Center
+ ) {
+ LegendItem("Income", AccentGreen)
+ Spacer(Modifier.width(16.dp))
+ LegendItem("Expenses", AccentRed)
+ }
+}
+// Financial metric card, tabs, helpers
+@Composable
+fun FinancialMetricCardMini(
+ title: String,
+ value: String,
+ color: Color,
+ icon: ImageVector,
+ modifier: Modifier = Modifier
+) {
+ Card(
+ modifier = modifier
+ .height(IntrinsicSize.Max)
+ .padding(vertical = 4.dp),
+ shape = RoundedCornerShape(12.dp),
+ elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+ ) {
+ Column(
+ modifier = Modifier
+ .padding(12.dp)
+ .fillMaxWidth(),
+ horizontalAlignment = Alignment.Start
+ ) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Icon(
+ icon,
+ contentDescription = null,
+ tint = color.copy(alpha = 0.8f),
+ modifier = Modifier.size(16.dp)
+ )
+ Spacer(Modifier.width(4.dp))
+ Text(title, color = Color.Gray, fontSize = 10.sp)
+ }
+ Spacer(Modifier.height(4.dp))
+ Text(value, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = TextColor)
+ }
+ }
+}
+@Composable
+fun TabButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
+ TextButton(
+ onClick = onClick,
+ colors = ButtonDefaults.textButtonColors(
+ containerColor = if (isSelected) PrimaryPurple else Color.Transparent,
+ contentColor = if (isSelected) Color.White else PrimaryPurple
+ ),
+ border = if (isSelected) null else BorderStroke(1.dp, PrimaryPurple),
+ shape = RoundedCornerShape(8.dp),
+ modifier = Modifier.padding(horizontal = 4.dp)
+ ) {
+ Text(text, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+ }
+}
+// =====================================================================
+// SETTINGS & PROFILE (with working Notifications / Currencies / Backup / Basic Info)
+// =====================================================================
+@Composable
+fun SettingsScreen(
+ onNavigateBack: () -> Unit,
+ onOpen: (Screen) -> Unit,
+ onNavigateToProfile: () -> Unit
+) {
+ // use the shared AppState for notifications
+ Scaffold(
+ topBar = { SimpleTopBarWithBack("Settings", onNavigateBack) }
+ ) { paddingValues ->
+ Column(modifier = Modifier
+ .padding(paddingValues)
+ .padding(16.dp)) {
+ Text("General Settings", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier =
+ Modifier.padding(bottom = 8.dp))
+ // Edit Profile
+ SettingItem("Edit Profile", Icons.Default.Person) {
+ onNavigateToProfile()
+ }
+ // Notifications — now a working switch linked with AppState
+ Row(
+ Modifier
+ .fillMaxWidth()
+ .padding(vertical = 12.dp),
+ verticalAlignment = Alignment.CenterVertically
+ ) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Icon(Icons.Default.Notifications, contentDescription = null, tint = PrimaryPurple)
+ Spacer(Modifier.width(16.dp))
+ Text("Notifications", fontSize = 16.sp)
+ }
+ Spacer(Modifier.weight(1f))
+ val enabled = AppState.notificationsEnabled
+ Switch(
+ checked = enabled,
+ onCheckedChange = {
+ AppState.notificationsEnabled = it
+ Log.d("SETTINGS", "Notifications toggled: $it")
+ }
+ )
+ }
+ Divider(color = BorderColor)
+ Text("Financial Settings", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier =
+ Modifier.padding(top = 16.dp, bottom = 8.dp))
+ // Currencies — navigate to currency list screen
+ SettingItem("Currencies", Icons.Default.CurrencyExchange) {
+ onOpen(Screen.Currency)
+ }
+ // Backup Data — navigate to backup screen
+ SettingItem("Backup Data", Icons.Default.CloudUpload) {
+ onOpen(Screen.Backup)
+ }
+ Spacer(Modifier.height(12.dp))
+ Divider(color = BorderColor)
+ Spacer(Modifier.height(12.dp))
+ // About section and Basic Info at the bottom
+ Text("About", fontWeight = FontWeight.SemiBold, fontSize = 16.sp, modifier =
+Modifier.padding(bottom = 8.dp))
+ SettingItem("Basic Information", Icons.Default.Info) {
+ onOpen(Screen.BasicInfo)
+ }
+ Spacer(Modifier.height(24.dp))
+ Text("App Version: 1.0.0", color = Color.Gray)
+ }
+ }
+}
+// =====================================================================
+// CURRENCIES SCREEN (Radio list + Save button)
+// =====================================================================
+@Composable
+fun CurrenciesScreen(onNavigateBack: () -> Unit) {
+ var selected by remember { mutableStateOf(AppState.selectedCurrency) }
+ val snackbarHostState = remember { SnackbarHostState() }
+ val scope = rememberCoroutineScope()
+ Scaffold(
+ topBar = { SimpleTopBarWithBack("Choose Currency", onNavigateBack) },
+ snackbarHost = { SnackbarHost(snackbarHostState) }
+ ) { paddingValues ->
+ Column(
+ modifier = Modifier
+ .padding(paddingValues)
+ .fillMaxSize()
+ .verticalScroll(rememberScrollState())
+ .padding(16.dp)
+ ) {
+ Text("Select your currency", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+ Spacer(Modifier.height(12.dp))
+ val currencies = listOf(
+ "INR (₹)", "USD ($)", "EUR (€)", "GBP (£)",
+ "AUD (A$)", "AED ( إ. د"(," CAD (C$)", "JPY (¥)", "SGD (S$)"
+ )
+ currencies.forEach { currency ->
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .clickable { selected = currency }
+ .padding(vertical = 8.dp),
+ verticalAlignment = Alignment.CenterVertically
+ ) {
+ RadioButton(
+ selected = (selected == currency),
+ onClick = { selected = currency }
+ )
+ Spacer(Modifier.width(8.dp))
+ Text(currency, fontSize = 16.sp)
+ }
+ }
+ Spacer(Modifier.height(24.dp))
+ Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement =
+Arrangement.SpaceBetween) {
+ OutlinedButton(onClick = { onNavigateBack() }, modifier = Modifier.weight(1f)) {
+ Text("Cancel")
+ }
+ Spacer(Modifier.width(12.dp))
+ Button(
+ onClick = {
+ AppState.selectedCurrency = selected
+ scope.launch {
+ snackbarHostState.showSnackbar("Currency saved: $selected")
+ }
+ Log.d("CURRENCY", "Saved currency: $selected")
+ },
+ modifier = Modifier.weight(1f),
+ colors = ButtonDefaults.buttonColors(containerColor = PrimaryPurple)
+ ) {
+ Text("Save Currency", color = Color.White)
+ }
+ }
+ }
+ }
+}
+// =====================================================================
+// BACKUP SCREEN (Backup Now -> shows snackbar success)
+// =====================================================================
+@Composable
+fun BackupScreen(onNavigateBack: () -> Unit) {
+ val snackbarHostState = remember { SnackbarHostState() }
+ val scope = rememberCoroutineScope()
+ Scaffold(
+ topBar = { SimpleTopBarWithBack("Backup Data", onNavigateBack) },
+ snackbarHost = { SnackbarHost(snackbarHostState) }
+ ) { paddingValues ->
+ Column(
+ modifier = Modifier
+ .padding(paddingValues)
+ .padding(16.dp)
+ .fillMaxSize()
+ ) {
+ Text("Backup your app data", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+ Spacer(Modifier.height(12.dp))
+ Text(
+ "Press the button below to run a backup. This is a simulated backup for demo purposes.",
+ color = Color.Gray
+ )
+ Spacer(Modifier.height(20.dp))
+ Button(
+ onClick = {
+ scope.launch {
+ snackbarHostState.showSnackbar("Backup completed successfully!")
+ }
+ Log.d("BACKUP", "Backup completed (simulated).")
+ },
+ modifier = Modifier.fillMaxWidth(),
+ colors = ButtonDefaults.buttonColors(containerColor = AccentGreen)
+ ) {
+ Text("Backup Now", color = Color.White)
+ }
+ Spacer(Modifier.height(16.dp))
+ OutlinedButton(onClick = onNavigateBack, modifier = Modifier.fillMaxWidth()) {
+ Text("Back")
+ }
+ }
+ }
+}
+// =====================================================================
+// BASIC INFO WRAPPER (simple screen with back nav)
+// =====================================================================
+@Composable
+fun BasicInfoScreenWrapper(onNavigateBack: () -> Unit) {
+ Scaffold(topBar = { SimpleTopBarWithBack("Basic Information", onNavigateBack) }) {
+paddingValues ->
+ Column(Modifier.padding(paddingValues).padding(16.dp)) {
+ Text("SpendSense App Version: 1.0.0", fontWeight = FontWeight.Bold)
+ Spacer(Modifier.height(8.dp))
+ Text("Developed by: Sinchana")
+ Spacer(Modifier.height(12.dp))
+ Text("Contact: sinchanaam48@gmail.com", color = Color.Gray)
+ }
+ }
+}
+// =====================================================================
+// PROFILE (with back)
+// =====================================================================
+@Composable
+fun ProfileScreen(onNavigateBack: () -> Unit) {
+ Scaffold(
+ topBar = { SimpleTopBarWithBack("User Profile", onNavigateBack) }
+ ) { paddingValues ->
+ Column(
+ modifier = Modifier
+ .padding(paddingValues)
+ .fillMaxSize()
+ .padding(16.dp),
+ horizontalAlignment = Alignment.CenterHorizontally
+ ) {
+ Box(
+ modifier = Modifier
+ .size(96.dp)
+ .clip(CircleShape)
+ .background(PrimaryPurple.copy(alpha = 0.5f)),
+ contentAlignment = Alignment.Center
+ ) {
+ Icon(
+ Icons.Default.Person,
+ contentDescription = "Profile Picture",
+ tint = Color.White,
+ modifier = Modifier.size(64.dp)
+ )
+ }
+ Spacer(Modifier.height(16.dp))
+ Text("Sinchana", fontWeight = FontWeight.Bold, fontSize = 24.sp)
+ Text("sinchanaam48@gmail.com", color = Color.Gray)
+ Spacer(Modifier.height(32.dp))
+ OutlinedTextField(
+ value = "Sinchana",
+ onValueChange = {},
+ label = { Text("Full Name") },
+ readOnly = true,
+ modifier = Modifier.fillMaxWidth()
+ )
+ Spacer(Modifier.height(16.dp))
+ OutlinedTextField(
+ value = "20/11/2004",
+ onValueChange = {},
+ label = { Text("Date of Birth") },
+ readOnly = true,
+ modifier = Modifier.fillMaxWidth()
+ )
+ Spacer(Modifier.height(16.dp))
+ Button(
+ onClick = { Log.d("PROFILE", "Edit Profile clicked") },
+ modifier = Modifier.fillMaxWidth()
+ ) {
+ Text("Edit Profile")
+ }
+ }
+ }
+}
+// =====================================================================
+// HELPERS (SimpleTopBar, Legend, ProTips, SettingItem, etc.)
+// =====================================================================
+@Composable
+fun SimpleTopBarWithBack(title: String, onNavigateBack: () -> Unit) {
+ Column {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .padding(horizontal = 16.dp, vertical = 16.dp),
+ verticalAlignment = Alignment.CenterVertically,
+ horizontalArrangement = Arrangement.SpaceBetween
+ ) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ IconButton(onClick = onNavigateBack) {
+ Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+ }
+ Spacer(Modifier.width(8.dp))
+ Text("Back", fontSize = 14.sp)
+ }
+ Text(title, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+ Spacer(Modifier.width(48.dp))
+ }
+ Divider(color = BorderColor)
+ }
+}
+@Composable
+fun LegendItem(label: String, color: Color) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Box(
+ modifier = Modifier
+ .size(10.dp)
+ .clip(CircleShape)
+ .background(color)
+ )
+ Spacer(Modifier.width(4.dp))
+ Text(label, fontSize = 12.sp, color = TextColor)
+ }
+}
+@Composable
+fun ProTipsCard(isIncome: Boolean) {
+ val tips = if (isIncome) listOf(
+ "Record income as soon as you receive it for accurate tracking",
+ "Use detailed source names to identify income streams easily",
+ "Add notes for tax purposes or future reference"
+ ) else listOf(
+ "Categorize expenses immediately to understand spending habits",
+ "Set a budget limit to control discretionary spending",
+ "Keep receipts and note large purchases for review"
+ )
+ Card(
+ modifier = Modifier.fillMaxWidth(),
+ shape = RoundedCornerShape(16.dp),
+ colors = CardDefaults.cardColors(containerColor = BackgroundLight)
+ ) {
+ Column(modifier = Modifier.padding(16.dp)) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Icon(Icons.Default.Lightbulb, contentDescription = "Pro Tips", tint = AccentGreen)
+ Spacer(Modifier.width(8.dp))
+ Text("Pro Tips", fontWeight = FontWeight.Bold, color = AccentGreen)
+ }
+ Spacer(modifier = Modifier.height(8.dp))
+ tips.forEach { tip ->
+ Row(
+ modifier = Modifier.padding(vertical = 4.dp),
+ verticalAlignment = Alignment.Top
+ ) {
+ Icon(
+ Icons.Default.Check,
+ contentDescription = null,
+ tint = AccentGreen,
+ modifier = Modifier.size(16.dp)
+ )
+ Spacer(Modifier.width(8.dp))
+ Text(tip, fontSize = 14.sp)
+ }
+ }
+ }
+ }
+}
+@Composable
+fun SettingItem(title: String, icon: ImageVector, onClick: () -> Unit) {
+ Row(
+ modifier = Modifier
+ .fillMaxWidth()
+ .clickable(onClick = onClick)
+ .padding(vertical = 12.dp),
+ verticalAlignment = Alignment.CenterVertically,
+ horizontalArrangement = Arrangement.SpaceBetween
+ ) {
+ Row(verticalAlignment = Alignment.CenterVertically) {
+ Icon(icon, contentDescription = null, tint = PrimaryPurple)
+ Spacer(Modifier.width(16.dp))
+ Text(title, fontSize = 16.sp, color = TextColor)
+ }
+ Icon(Icons.Default.KeyboardArrowRight, contentDescription = null, tint = Color.LightGray)
+ }
+}
+// ===============================================================
+// PREVIEW
+// ===============================================================
+@Preview(showBackground = true, showSystemUi = true)
+@Composable
+fun SpendSenseFullPreview() {
+ MaterialTheme {
+ MainAppNavigator()
+ }
+}
